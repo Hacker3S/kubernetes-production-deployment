@@ -16,7 +16,7 @@ spec:
       containers:
         - name: backend
           # Replace with your own Docker Hub username (same image you pushed in Project 1's workflow)
-          image: YOUR_DOCKERHUB_USERNAME/multi-service-backend:latest
+          image: hacker3s/multi-service-backend:latest
           ports:
             - containerPort: 5000
           env:

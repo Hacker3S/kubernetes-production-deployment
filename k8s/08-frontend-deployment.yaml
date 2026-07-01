@@ -16,7 +16,7 @@ spec:
       containers:
         - name: frontend
           # Replace with your own Docker Hub username
-          image: YOUR_DOCKERHUB_USERNAME/multi-service-frontend:latest
+          image: hacker3s/multi-service-frontend:latest
           ports:
             - containerPort: 80
           readinessProbe:
