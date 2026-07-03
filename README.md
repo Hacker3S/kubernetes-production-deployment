@@ -2,13 +2,17 @@
 
 ![Kubernetes](https://img.shields.io/badge/Kubernetes-326CE5?style=flat&logo=kubernetes&logoColor=white)
 ![Docker](https://img.shields.io/badge/Docker-2496ED?style=flat&logo=docker&logoColor=white)
+![Helm](https://img.shields.io/badge/Helm-0F1689?style=flat&logo=helm&logoColor=white)
 ![Prometheus](https://img.shields.io/badge/Prometheus-E6522C?style=flat&logo=prometheus&logoColor=white)
 ![Grafana](https://img.shields.io/badge/Grafana-F46800?style=flat&logo=grafana&logoColor=white)
+![Nginx](https://img.shields.io/badge/Nginx-009639?style=flat&logo=nginx&logoColor=white)
 ![License](https://img.shields.io/badge/License-MIT-green.svg)
+![Status](https://img.shields.io/badge/Status-Complete-brightgreen)
 
-Taking the multi-service app from [Project 2](https://github.com/Hacker3S/dockerized-multi-service-app) and deploying it on **Kubernetes** with an Ingress controller, a Load Balancer layer, and full cluster monitoring via Prometheus + Grafana.
+> **Project 3 of 3** in my DevOps portfolio series.
+> [Project 1 — CI/CD Pipeline](https://github.com/Hacker3S/cicd-docker-pipeline) · [Project 2 — Dockerized Multi-Service App](https://github.com/Hacker3S/dockerized-multi-service-app)
 
-This is the natural next step after Docker Compose: instead of one machine running four containers, Kubernetes manages scheduling, scaling, self-healing, and traffic routing for you.
+Taking the multi-service app from Project 2 and deploying it on **Kubernetes** with an Ingress controller, load-balanced replicas, persistent storage, and full cluster monitoring via Prometheus + Grafana — the way it would run in a real production environment.
 
 ---
 
@@ -19,33 +23,39 @@ This is the natural next step after Docker Compose: instead of one machine runni
                                 │
                                 ▼
                     ┌────────────────────────┐
-                    │   Load Balancer          │  (minikube tunnel /
-                    │   (Ingress Controller    │   cloud LB in production)
-                    │   Service)                │
+                    │   Load Balancer          │
+                    │   (Ingress Controller    │
+                    │    Service)              │
                     └────────────────────────┘
                                 │
                                 ▼
                     ┌────────────────────────┐
-                    │   Ingress (nginx)        │  routes by path
+                    │   Ingress (nginx)        │  routes by URL path
                     └────────────────────────┘
                        │                  │
                 "/"    │                  │  "/api"
                        ▼                  ▼
             ┌──────────────┐      ┌──────────────┐
-            │ Frontend      │      │ Backend       │
-            │ Deployment    │      │ Deployment     │
-            │ (2 replicas)  │      │ (2 replicas)   │
+            │  Frontend     │      │  Backend      │
+            │  Deployment   │      │  Deployment   │
+            │  (2 replicas) │      │  (2 replicas) │
             └──────────────┘      └──────┬───────┘
                                           │
                                           ▼
                                   ┌──────────────┐
-                                  │ Postgres      │
-                                  │ (StatefulPod  │
-                                  │  + PVC)       │
+                                  │  PostgreSQL   │
+                                  │  Deployment   │
+                                  │  + PVC        │
                                   └──────────────┘
 
-        Cluster-wide:  Prometheus (metrics) + Grafana (dashboards)
+     Cluster-wide:  Prometheus (metrics scraping) + Grafana (dashboards)
 ```
+
+**Key design decisions:**
+- The browser only ever talks to one entry point — the Ingress controller
+- Nginx Ingress routes `/api/*` to the backend, `/` to the frontend — same pattern as Project 2's reverse proxy, now managed by Kubernetes
+- All services communicate internally by **service name**, never by IP — Kubernetes DNS resolves them automatically
+- PostgreSQL data is stored in a **PersistentVolumeClaim** so it survives pod restarts and redeployments
 
 ---
 
@@ -53,11 +63,14 @@ This is the natural next step after Docker Compose: instead of one machine runni
 
 | Layer | Technology |
 |---|---|
-| Orchestration | Kubernetes (Minikube) |
-| Ingress / Load Balancing | ingress-nginx |
-| Application | React frontend, Node.js backend, PostgreSQL (from Project 2) |
-| Monitoring | Prometheus + Grafana (via Helm) |
-| Manifests | Raw Kubernetes YAML |
+| Orchestration | Kubernetes (Docker Desktop — kubeadm) |
+| Ingress / Routing | ingress-nginx |
+| Frontend | React 18 (Vite), served via Nginx |
+| Backend | Node.js + Express REST API |
+| Database | PostgreSQL 16 |
+| Monitoring | Prometheus + Grafana (kube-prometheus-stack via Helm) |
+| Image Registry | Docker Hub |
+| Manifest format | Raw Kubernetes YAML |
 
 ---
 
@@ -65,125 +78,120 @@ This is the natural next step after Docker Compose: instead of one machine runni
 
 ```
 kubernetes-production-deployment/
+├── README.md
+├── .gitignore
 └── k8s/
-    ├── 00-namespace.yaml
-    ├── 01-postgres-secret.yaml
-    ├── 02-postgres-init-configmap.yaml
-    ├── 03-postgres-pvc.yaml
-    ├── 04-postgres-deployment.yaml
-    ├── 05-postgres-service.yaml
-    ├── 06-backend-deployment.yaml
-    ├── 07-backend-service.yaml
-    ├── 08-frontend-deployment.yaml
-    ├── 09-frontend-service.yaml
-    └── 10-ingress.yaml
+    ├── 00-namespace.yaml              # Isolates all app resources
+    ├── 01-postgres-secret.yaml        # DB credentials (Secret)
+    ├── 02-postgres-init-configmap.yaml # DB init SQL (ConfigMap)
+    ├── 03-postgres-pvc.yaml           # Persistent storage claim
+    ├── 04-postgres-deployment.yaml    # PostgreSQL pod
+    ├── 05-postgres-service.yaml       # Internal ClusterIP service
+    ├── 06-backend-deployment.yaml     # Node.js API — 2 replicas
+    ├── 07-backend-service.yaml        # Internal ClusterIP service
+    ├── 08-frontend-deployment.yaml    # React app — 2 replicas
+    ├── 09-frontend-service.yaml       # Internal ClusterIP service
+    └── 10-ingress.yaml                # Path-based routing rules
 ```
 
 ---
 
 ## ✅ Prerequisites
 
-Install these (all free):
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (you already have this)
-- [kubectl](https://kubernetes.io/docs/tasks/tools/) — the Kubernetes CLI
-- [Minikube](https://minikube.sigs.k8s.io/docs/start/) — runs a local Kubernetes cluster
-- [Helm](https://helm.sh/docs/intro/install/) — used to install the monitoring stack
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) with **Kubernetes enabled** (Settings → Kubernetes → Enable Kubernetes)
+- [kubectl](https://kubernetes.io/docs/tasks/tools/) — Kubernetes CLI
+- [Helm](https://helm.sh/docs/intro/install/) — package manager for Kubernetes
+- Docker Hub account (images from [Project 2](https://github.com/Hacker3S/dockerized-multi-service-app) pushed there)
 
 ---
 
-## 🚀 Step-by-Step Setup
+## 🚀 Deployment Guide
 
-### 1. Start Minikube and enable Ingress
+### 1. Confirm the cluster is ready
 
-```bash
-minikube start
-minikube addons enable ingress
+```powershell
+kubectl get nodes
 ```
 
-Wait for it to confirm the ingress controller is running:
-```bash
+Expected output: one node `docker-desktop` with `STATUS: Ready`.
+
+### 2. Install the Ingress controller
+
+Docker Desktop's Kubernetes doesn't bundle an ingress controller, so install ingress-nginx directly:
+
+```powershell
+kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/controller-v1.14.3/deploy/static/provider/cloud/deploy.yaml
+```
+
+Wait until the controller pod is running:
+
+```powershell
 kubectl get pods -n ingress-nginx
 ```
 
-### 2. Push your Project 2 images to Docker Hub
+### 3. Push the application images to Docker Hub
 
-If you haven't already pushed the frontend/backend images from Project 2:
+The Kubernetes manifests pull images from Docker Hub. Build and push from the Project 2 directory:
 
-```bash
-cd ../dockerized-multi-service-app
+```powershell
+cd ..\dockerized-multi-service-app
 
-docker build -t YOUR_DOCKERHUB_USERNAME/multi-service-backend:latest ./backend
-docker build -t YOUR_DOCKERHUB_USERNAME/multi-service-frontend:latest ./frontend
+docker build -t hacker3s/multi-service-backend:latest ./backend
+docker build -t hacker3s/multi-service-frontend:latest ./frontend
 
-docker push YOUR_DOCKERHUB_USERNAME/multi-service-backend:latest
-docker push YOUR_DOCKERHUB_USERNAME/multi-service-frontend:latest
+docker push hacker3s/multi-service-backend:latest
+docker push hacker3s/multi-service-frontend:latest
 ```
 
-### 3. Update the image references
+### 4. Deploy all manifests
 
-In `06-backend-deployment.yaml` and `08-frontend-deployment.yaml`, replace `YOUR_DOCKERHUB_USERNAME` with your actual Docker Hub username:
-
-```bash
-cd k8s
-sed -i 's/YOUR_DOCKERHUB_USERNAME/your-actual-username/' 06-backend-deployment.yaml 08-frontend-deployment.yaml
-```
-
-### 4. Apply all manifests
-
-```bash
+```powershell
+cd ..\kubernetes-production-deployment
 kubectl apply -f k8s/
 ```
 
-`kubectl apply -f` on a directory applies every YAML file inside it — no need to run each one individually.
+`kubectl apply -f` on a directory applies every YAML file inside it in order.
 
 ### 5. Watch everything come up
 
-```bash
+```powershell
 kubectl get all -n multiservice
 ```
 
-Wait until all pods show `Running` and `1/1` or `2/2` ready. Check details on any stuck pod with:
-```bash
-kubectl describe pod <pod-name> -n multiservice
-kubectl logs <pod-name> -n multiservice
+Wait until all pods show `Running` and `1/1` or `2/2` ready. This typically takes under 60 seconds since images are already on Docker Hub.
+
+### 6. Add the hostname to your hosts file
+
+Open Notepad as **Administrator** → File → Open → `C:\Windows\System32\drivers\etc\hosts`
+
+Add this line at the bottom:
+```
+127.0.0.1  multiservice.local
 ```
 
-### 6. Map the Ingress hostname locally
+Save and close.
 
-Get Minikube's IP:
-```bash
-minikube ip
-```
-
-Add this line to your hosts file (`C:\Windows\System32\drivers\etc\hosts` on Windows — edit as Administrator):
-```
-<minikube-ip>  multiservice.local
-```
-
-### 7. Open a tunnel (this is your Load Balancer layer)
-
-In a **separate terminal**, keep this running:
-```bash
-minikube tunnel
-```
-
-This gives the ingress controller's Service (type `LoadBalancer`) a real, reachable external IP — exactly how a cloud load balancer would work in production.
-
-### 8. Visit the app
+### 7. Access the app
 
 ```
 http://multiservice.local
 ```
 
-You should see the same React app from Project 2 — now served entirely from a Kubernetes cluster.
+You should see the React app from Project 2 — now served from a Kubernetes cluster with load-balanced replicas behind an Ingress controller.
+
+**Fallback (port-forward) if the hostname doesn't resolve:**
+```powershell
+kubectl port-forward svc/frontend 8080:80 -n multiservice
+```
+Then visit `http://localhost:8080`.
 
 ---
 
-## 📊 Adding Monitoring (Prometheus + Grafana)
+## 📊 Monitoring — Prometheus + Grafana
 
-### 1. Install the kube-prometheus-stack via Helm
+### Install the monitoring stack via Helm
 
-```bash
+```powershell
 helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
 helm repo update
 
@@ -191,77 +199,109 @@ helm install monitoring prometheus-community/kube-prometheus-stack \
   --namespace monitoring --create-namespace
 ```
 
-This single chart installs Prometheus, Grafana, Alertmanager, and exporters that automatically monitor your entire cluster — nodes, pods, deployments — no extra config needed.
+Wait for all pods to come up:
 
-### 2. Access Grafana
+```powershell
+kubectl get pods -n monitoring
+```
 
-```bash
+> **Note on Windows/WSL2:** The `node-exporter` pod will CrashLoopBackOff — this is a known limitation of running Kubernetes on Docker Desktop for Windows. It tries to read Linux node filesystem paths that don't exist the same way under WSL2. Everything else (Prometheus, Grafana, Alertmanager, kube-state-metrics) runs correctly and all pod-level metrics still work.
+
+### Access Grafana
+
+```powershell
 kubectl port-forward svc/monitoring-grafana 3000:80 -n monitoring
 ```
 
-Visit `http://localhost:3000`.
+Get the admin password:
 
-Get the admin password (it's auto-generated, not a fixed default):
-```bash
-kubectl get secret monitoring-grafana -n monitoring -o jsonpath="{.data.admin-password}" | base64 --decode
+```powershell
+$b64 = kubectl get secret monitoring-grafana -n monitoring -o jsonpath="{.data.admin-password}"
+[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String($b64))
 ```
-Username is `admin`.
 
-### 3. Explore the dashboards
+Visit `http://localhost:3000` — login with username `admin` and the password above.
 
-Go to **Dashboards** in the Grafana sidebar — you'll already have pre-built dashboards like:
-- **Kubernetes / Compute Resources / Namespace (Pods)** — pick `multiservice` to see your app's CPU/memory in real time
-- **Kubernetes / Compute Resources / Cluster** — overall cluster health
+### Useful dashboards (pre-installed)
+
+Navigate to **Dashboards → Browse** in the Grafana sidebar:
+
+- **Kubernetes / Compute Resources / Namespace (Pods)** → select `multiservice` → real-time CPU and memory for every pod
+- **Kubernetes / Compute Resources / Cluster** → overall cluster health
+- **Kubernetes / Networking / Namespace (Pods)** → network traffic per pod
 
 ---
 
-## 🧪 Verifying & Debugging
+## 🧪 Debugging & Verification Commands
 
-```bash
-# See everything in your namespace
+```powershell
+# See everything in your namespace at once
 kubectl get all -n multiservice
 
-# Logs for a specific deployment
+# Logs for a specific deployment (shows logs from one of its pods)
 kubectl logs deployment/backend -n multiservice
 
-# Exec into a pod
+# Follow logs in real time
+kubectl logs -f deployment/backend -n multiservice
+
+# Exec into a running pod
 kubectl exec -it deployment/postgres -n multiservice -- psql -U postgres -d appdb -c "SELECT * FROM items;"
 
-# Describe a pod stuck in Pending/CrashLoopBackOff
+# Describe a pod that's stuck (Pending, CrashLoopBackOff, etc.)
 kubectl describe pod <pod-name> -n multiservice
 
-# Restart a deployment without changing anything (forces fresh pods)
+# Force a rolling restart of a deployment (no YAML changes needed)
 kubectl rollout restart deployment/backend -n multiservice
+
+# Check ingress routing rules
+kubectl get ingress -n multiservice
+
+# Delete and redeploy everything cleanly
+kubectl delete namespace multiservice
+kubectl apply -f k8s/
 ```
 
 ---
 
 ## 💡 What This Project Demonstrates
 
-- Writing and organizing raw Kubernetes manifests (Namespace, Secret, ConfigMap, PVC, Deployment, Service, Ingress)
-- Reusing one Secret across two different containers under different env var names via `secretKeyRef`
-- Ingress-based path routing — one entry point splitting traffic to two services
-- The Load Balancer layer in front of an Ingress controller (`minikube tunnel`, or a real LoadBalancer Service in cloud Kubernetes)
-- Persistent storage for stateful workloads (PostgreSQL) using PersistentVolumeClaims
-- Readiness/liveness probes controlling traffic routing and pod restarts
-- Cluster-wide observability with Prometheus + Grafana, installed via Helm
+| Concept | Implementation |
+|---|---|
+| Raw Kubernetes YAML | 11 manifests — Namespace, Secret, ConfigMap, PVC, Deployment, Service, Ingress |
+| Secret management | One Secret reused by both Postgres and Backend via `secretKeyRef` under different env var names |
+| Ingress routing | Path-based routing (`/api` → backend, `/` → frontend) via ingress-nginx |
+| Load balancing | 2 replicas each for frontend and backend; Kubernetes load-balances automatically |
+| Persistent storage | PVC ensures PostgreSQL data survives pod restarts and redeployments |
+| Health probes | Readiness probes prevent traffic reaching pods that aren't ready; liveness probes restart stuck pods |
+| Helm | Entire monitoring stack (Prometheus + Grafana + Alertmanager) deployed with one command |
+| Observability | Real-time CPU/memory dashboards per pod in Grafana |
+
+---
+
+## 🔗 Related Projects
+
+| Project | Description | Repo |
+|---|---|---|
+| Project 1 | CI/CD Pipeline (GitHub Actions + Docker) | [cicd-docker-pipeline](https://github.com/Hacker3S/cicd-docker-pipeline) |
+| Project 2 | Dockerized Multi-Service App (Docker Compose) | [dockerized-multi-service-app](https://github.com/Hacker3S/dockerized-multi-service-app) |
+| Project 3 | **This project** — Kubernetes Deployment + Monitoring | — |
 
 ---
 
 ## 🚀 Possible Extensions
 
-- Add a `HorizontalPodAutoscaler` so the backend scales automatically under load
-- Add TLS with `cert-manager` for HTTPS on the Ingress
-- Package this app itself as a Helm chart instead of raw manifests
-- Add a custom `/metrics` endpoint to the backend (using `prom-client`) and a `ServiceMonitor` so Prometheus scrapes app-specific metrics, not just cluster metrics
-- Move from Minikube to a real cloud Kubernetes cluster (EKS/GKE/AKS) — the manifests don't need to change
+- Add a `HorizontalPodAutoscaler` to scale the backend automatically under CPU load
+- Add TLS with `cert-manager` + Let's Encrypt for HTTPS on the Ingress
+- Package the entire app as a **Helm chart** instead of raw manifests
+- Add a custom `/metrics` endpoint to the Node.js backend using `prom-client` and a `ServiceMonitor` so Prometheus scrapes app-level metrics (request count, latency, error rate) — not just cluster metrics
+- Deploy to a real cloud Kubernetes cluster (AWS EKS, GCP GKE, or Azure AKS) — the manifests need zero changes
 
 ---
 
 ## 👤 Author
 
 **Shawn Sreeju Sampath**
-[GitHub](https://github.com/Hacker3S) · [LinkedIn](https://linkedin.com/in/shawn-sreeju-sampath-074923377)
+[GitHub](https://github.com/Hacker3S) · [LinkedIn](https://linkedin.com/in/shawn-sreeju-sampath-074923377) · [Docker Hub](https://hub.docker.com/u/hacker3s)
 
 ---
 
